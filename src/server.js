@@ -1,6 +1,7 @@
 import http from "http";
-import SocketIo from "socket.io";
+import { Server } from "socket.io";
 import express from "express";
+import { instrument } from "@socket.io/admin-ui";
 
 const app = express();
 
@@ -12,20 +13,65 @@ app.get("/", (_, res) => res.render("home"));
 app.get("/*", (_, res) => res.redirect("/"));
 
 const httpServer = http.createServer(app);
-const ioServer = SocketIo(httpServer);
+const ioServer = new Server(httpServer, {
+  cors: {
+    origin: ["https://admin.socket.io"],
+    credentials: true,
+  },
+});
+
+instrument(ioServer, {
+  auth: false,
+});
+
+function publicRooms() {
+  const {
+    sockets: {
+      adapter: { sids, rooms },
+    },
+  } = ioServer;
+
+  const publicRooms = [];
+  rooms.forEach((_, key) => {
+    if (!sids.has(key)) {
+      publicRooms.push(key);
+    }
+  });
+  return publicRooms;
+}
+
+function countRoom(roomName) {
+  const size = ioServer.sockets.adapter.rooms.get(roomName)?.size;
+  return size;
+}
 
 ioServer.on("connection", (socket) => {
+  socket["nickname"] = "Anonymous";
   socket.on("enter_room", (roomName, joinAfter) => {
-    socket.join("roomName");
+    socket.join(roomName);
     joinAfter();
-    socket.to(roomName).emit("welcome");
+    socket.emit("room_count", countRoom(roomName));
+    socket.to(roomName).emit("welcome", socket.nickname, countRoom(roomName));
+    ioServer.sockets.emit("room_change", publicRooms());
   });
+
   socket.on("disconnecting", () => {
-    socket.rooms.forEach((room) => socket.to(room).emit("bye"));
+    socket.rooms.forEach((room) =>
+      socket.to(room).emit("bye", socket.nickname, countRoom(room) - 1)
+    );
   });
+
+  socket.on("disconnect", () => {
+    ioServer.sockets.emit("room_change", publicRooms());
+  });
+
   socket.on("message", (msg, roomName, sendAfter) => {
-    socket.to(roomName).emit("message", msg);
+    socket.to(roomName).emit("message", `${socket.nickname}: ${msg}`);
     sendAfter();
+  });
+
+  socket.on("nickname", (nickname) => {
+    socket["nickname"] = nickname;
   });
 });
 
