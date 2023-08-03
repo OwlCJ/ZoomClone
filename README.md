@@ -1,6 +1,6 @@
 # Noom
 
-Zoom Clone Stacks With NomadCoder! (Thanks To Nico :) )
+Zoom Clone With NomadCoder! (Thanks To Nico :) )
 <br/>
 ## Stacks
 - WebRTC
